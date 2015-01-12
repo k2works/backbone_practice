@@ -10,7 +10,7 @@ module.exports = function (grunt) {
     pkg: grunt.file.readJSON('package.json'),
     dirs: {
       src: 'js',
-      dest: 'js'
+      dest: 'dest'
     },
     jshint: {
       beforeconcat: ['<%= dirs.src %>/*.js'],
@@ -80,9 +80,8 @@ module.exports = function (grunt) {
   grunt.registerTask('build', 'Build JavaScript Files', [
     'jshint:beforeconcat',
     'concat',
-    'jshint:afterconcat',
     'uglify'
   ]);
-
+  grunt.registerTask('check', ['jshint:beforeconcat']);
   grunt.registerTask('default', ['connect:livereload', 'open', 'watch']);
 };
