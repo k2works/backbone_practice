@@ -298,6 +298,574 @@ $(function() {
 }); 
 ``` 
 ## <a name="3">メモ帳アプリケーションの作成２</a>
+### メモの削除
+```javascript
+// js/note_list_item.js
+
+App.NoteListItemView = Backbone.View.extend({
+
+  tagName: 'tr',
+
+  initialize: function() {
+    // モデルのdestroyイベントを監視して
+    // BackBone.Viewのremove()メソッドを呼び出す
+    this.listenTo(this.model,'destroy',this.remove);
+  },
+
+  // [Delete]ボタンを監視して
+  // onClickDelete()メソッドを呼び出す
+  events: {
+    'click .js-delete':'onClickDelete'
+  },
+
+  render: function() {
+    var template = $('#noteListItemView-template').html();
+    var compiled = _.template(template);
+    var html = compiled(this.model.toJSON());
+    this.$el.html(html);
+    return this;
+  },
+
+  onClickDelete: function() {
+    // モデルを削除する
+    this.model.destroy();
+  }
+});
+```
+### データの永続化
+```javascript
+// js/app.js
+window.App = {};
+
+var initializeNotes = function() {
+  var noteCollection = new App.NoteCollection([{
+    title:'テスト１',
+    body:'テスト１です。'
+  },{
+    title:'テスト２',
+    body:'テスト２です。'
+  },{
+    title:'テスト３',
+    body:'テスト３です'
+  }]);
+
+  // 作成したモデルはローカルストレージに保存する
+  noteCollection.each(function(note) {
+    note.save();
+  });
+
+  // この処理で作ったコレクションは一時的な用途であり
+  // 必要なのは中身のモデルなのでモデルの配列を返す
+  return noteCollection.models;
+};
+
+$(function() {
+  // NoteCollectionコレクションを初期化する
+  // 後で別のjsファイルからも参照するので
+  // App名前空間配下に参照を持たせておく
+  App.noteCollection = new App.NoteCollection();
+
+  // メモの一覧のビューを表示する領域として
+  // App.Containerを初期化する
+  // こちらも同様の理由でApp配下に参照を持たせる
+  App.mainContainer = new App.Container({
+    el:'#main-container'
+  });
+
+  // 初期化処理を追加する
+  App.headerContainer = new App.Container({
+    el:'#header-container'
+  });
+
+  // NoteCollectionコレクションのデータを受信する
+  // (Backbone.LocalStorageを使用しているので
+  // ブラウザのローカルストレージから読み込む
+  App.noteCollection.fetch().then(function(notes){
+
+    // もし読み込んだデータが空であれば
+    // ダミーデータでコレクションの中身を上書きする
+    if(notes.length === 0) {
+      var models = initializeNotes();
+      App.noteCollection.reset(models);
+    }
+
+    // ルータの初期化と履歴管理の開始
+    App.router = new App.Router();
+    Backbone.history.start();
+  });
+
+});
+```
+### メモの詳細画面を表示するルーティング
+```html
+      <script type="text/template" id="noteDetailView-template">
+        <h2><%= title %></h2>
+        <p><%= body %></p>
+      </script>
+ ```
+
+```javascript
+//js/note_detail.js
+
+App.NoteDetailView = Backbone.View.extend({
+
+  render: function() {
+    var template = $('#noteDetailView-template').html();
+    var compiled = _.template(template);
+    var html = compiled(this.model.toJSON());
+    this.$el.html(html);
+    return this;
+  }
+});
+```
+
+#### ルーティングの実装
+```html
+      <script type="text/template" id="noteListItemView-template">
+        <!--
+            個々のメモ情報を表示する<tr>要素のためのテンプレート
+            <tr>要素自体はBackbone.Viewを生成する
+        -->
+        <td>
+          <a href="#notes/<%= id %>">
+            <%= title %>
+          </a>
+        </td>
+```
+
+```javascript
+App.Router = Backbone.Router.extend({
+  routes: {
+    'notes/:id':'showNoteDetail'
+  },
+
+  // ルーティングが受け取った:idパラメータは
+  // そのまま引数名idで受け取れる
+  showNoteDetail: function(id) {
+    var note = App.noteCollection.get(id);
+    var noteDetailView = new App.NoteDetailView({
+      model: note
+    });
+    
+    App.mainContainer.show(noteDetailView);
+    }
+ });
+```
+
+```javascript
+$(function() {
+  // NoteCollectionコレクションを初期化する
+  // 後で別のjsファイルからも参照するので
+  // App名前空間配下に参照を持たせておく
+  App.noteCollection = new App.NoteCollection();
+
+  // メモの一覧のビューを表示する領域として
+  // App.Containerを初期化する
+  // こちらも同様の理由でApp配下に参照を持たせる
+  App.mainContainer = new App.Container({
+    el:'#main-container'
+  });
+
+  // 初期化処理を追加する
+  App.headerContainer = new App.Container({
+    el:'#header-container'
+  });
+
+  // NoteCollectionコレクションのデータを受信する
+  // (Backbone.LocalStorageを使用しているので
+  // ブラウザのローカルストレージから読み込む
+  App.noteCollection.fetch().then(function(notes){
+
+    // もし読み込んだデータが空であれば
+    // ダミーデータでコレクションの中身を上書きする
+    if(notes.length === 0) {
+      var models = initializeNotes();
+      App.noteCollection.reset(models);
+    }
+
+    // ルータの初期化と履歴管理の開始
+    App.router = new App.Router();
+    Backbone.history.start();
+  });
+
+});
+```
+
+### メモ一覧画面を表示するルーティング
+```javascript
+  routes: {
+    'notes/:id':'showNoteDetail',
+    '*actions':'defaultRoute'
+  },
+```
+```javascript
+  defaultRoute: function() {
+    this.showNoteList();
+    this.navigate('notes');
+  },
+```
+
+```html
+                <a href="./index.html#notes">
+                  Note Application Example
+                </a>
+```
+
+```javascript
+  showNoteList: function() {
+    // コレクションを渡して
+    // メモ一覧の親ビューを初期化する
+    var noteListView = new App.NoteListView({
+      collection: App.noteCollection
+    });
+
+    // 表示領域にメモ一覧を表示する
+    App.mainContainer.show(noteListView);
+    // メモ一覧操作ビューを表示するメソッドの
+    // 呼び出しを追加する
+    this.showNoteControl();
+  },
+```
+
+```javascript
+$(function() {
+  // NoteCollectionコレクションを初期化する
+  // 後で別のjsファイルからも参照するので
+  // App名前空間配下に参照を持たせておく
+  App.noteCollection = new App.NoteCollection();
+
+  // メモの一覧のビューを表示する領域として
+  // App.Containerを初期化する
+  // こちらも同様の理由でApp配下に参照を持たせる
+  App.mainContainer = new App.Container({
+    el:'#main-container'
+  });
+
+  // 初期化処理を追加する
+  App.headerContainer = new App.Container({
+    el:'#header-container'
+  });
+
+  // NoteCollectionコレクションのデータを受信する
+  // (Backbone.LocalStorageを使用しているので
+  // ブラウザのローカルストレージから読み込む
+  App.noteCollection.fetch().then(function(notes){
+
+    // もし読み込んだデータが空であれば
+    // ダミーデータでコレクションの中身を上書きする
+    if(notes.length === 0) {
+      var models = initializeNotes();
+      App.noteCollection.reset(models);
+    }
+
+    // ルータの初期化と履歴管理の開始
+    App.router = new App.Router();
+    Backbone.history.start();
+  });
+
+});
+```
+
+### メモの新規作成機能の追加
+#### 新規作成ボタンの設置
+```html
+      <script type="text/template" id="noteControlView-template">
+        <div class="row">
+          <div class="col-sm-6">
+            <!--後で検索欄を置く -->
+          </div>
+
+          <div class="col-sm-6 text-right">
+            <a href="#new" class="btn btn-primary btn-small js-new">
+              <span class="glyphicon glyphicon-plus"></span>
+              New Note
+            </a>
+          </div>
+        </div>
+      </script>
+```
+
+```html
+      <script src="./js/note_control.js"></script>
+```
+
+```javascript
+  App.mainContainer = new App.Container({
+    el:'#main-container'
+  });
+
+  // 初期化処理を追加する
+  App.headerContainer = new App.Container({
+    el:'#header-container'
+ });
+```
+
+```javascript
+  showNoteList: function() {
+    // コレクションを渡して
+    // メモ一覧の親ビューを初期化する
+    var noteListView = new App.NoteListView({
+      collection: App.noteCollection
+    });
+
+    // 表示領域にメモ一覧を表示する
+    App.mainContainer.show(noteListView);
+    // メモ一覧操作ビューを表示するメソッドの
+    // 呼び出しを追加する
+    this.showNoteControl();
+  },
+
+  // メモ一覧操作ビューを表示するメソッドを追加する
+  showNoteControl: function() {
+    var noteControlView = new App.NoteControlView();
+    App.headerContainer.show(noteControlView);
+  },
+```
+
+```javascript
+  showNoteDetail: function(id) {
+    var note = App.noteCollection.get(id);
+    var noteDetailView = new App.NoteDetailView({
+      model: note
+    });
+    
+    App.mainContainer.show(noteDetailView);
+    // メモの詳細画面ではボタンを消したいので
+    // App.Containerのempty()メソッドを呼び出して
+    // ビューを破棄しておく
+    App.headerContainer.empty();
+  },
+```
+
+#### 新規作成画面の追加
+```html
+      <script type="text/template" id="noteForm-template">
+        <form>
+          <div class="form-group">
+            <label for="noteTitle">Title</label>
+            <input type="text" class="form-control js-noteTitle" id="noteTitle" value="<%= title %>">
+          </div>
+          <div class="form-group">
+            <label for="noteBody">Body</label>
+            <textarea class="form-control js-noteBody" row="8">
+            <%= body %></textarea>
+          </div>
+          <button type="submit" class="btn btn-default">Submit</button>
+        </form>
+      </script>
+```
+
+```javascript
+//js/note_form.js
+
+App.NoteFormView = Backbone.View.extend({
+
+  render: function() {
+    var template = $('#noteForm-template').html();
+    var compiled = _.template(template);
+    var html = compiled(this.model.toJSON());
+    this.$el.html(html);
+    return this;
+  },
+
+  events: {
+    'submit form':'onSubmit'
+  },
+
+  onSubmit: function(e) {
+    e.preventDefault();
+    var attrs = {};
+    attrs.title = this.$('.js-noteTitle').val();
+    attrs.body = this.$('.js-noteBody').val();
+    this.trigger('submit:form',attrs);
+  }
+});
+```
+
+```html
+      <script src="./js/note_form.js"></script>
+```
+#### 新規作成画面のルーティング
+```javascript
+//js/router.js
+
+App.Router = Backbone.Router.extend({
+  routes: {
+    'notes/:id':'showNoteDetail',
+    'new':'showNewNote',
+    '*actions':'defaultRoute'
+  },
+
+  // ルーティングが受け取った:idパラメータは
+  // そのまま引数名idで受け取れる
+  showNoteDetail: function(id) {
+    var note = App.noteCollection.get(id);
+    var noteDetailView = new App.NoteDetailView({
+      model: note
+    });
+    
+    App.mainContainer.show(noteDetailView);
+    // メモの詳細画面ではボタンを消したいので
+    // App.Containerのempty()メソッドを呼び出して
+    // ビューを破棄しておく
+    App.headerContainer.empty();
+  },
+  defaultRoute: function() {
+    this.showNoteList();
+    this.navigate('notes');
+  },
+  showNoteList: function() {
+    // コレクションを渡して
+    // メモ一覧の親ビューを初期化する
+    var noteListView = new App.NoteListView({
+      collection: App.noteCollection
+    });
+
+    // 表示領域にメモ一覧を表示する
+    App.mainContainer.show(noteListView);
+    // メモ一覧操作ビューを表示するメソッドの
+    // 呼び出しを追加する
+    this.showNoteControl();
+  },
+
+  // メモ一覧操作ビューを表示するメソッドを追加する
+  showNoteControl: function() {
+    var noteControlView = new App.NoteControlView();
+    App.headerContainer.show(noteControlView);
+  },
+
+  showNewNote: function() {
+    var self = this;
+    // テンプレートの<%= title %>などの出力を空文字列で
+    // 空欄にしておくため、新規に生成したNoteモデルを渡して
+    // NoteFormViewを初期化する
+    var noteFormView = new App.NoteFormView({
+      model: new App.Note()
+    });
+
+    noteFormView.on('submit:form',function(attrs) {
+      // submit:formイベントで受け取ったフォームの
+      // 入力値をNoteCollectionコレクションのcreate()に
+      // 渡してNoteモデルの新規作成と保存を行う
+      App.noteCollection.create(attrs);
+
+      // モデル一覧を表示してルートを#notesに戻す
+      self.showNoteList();
+      self.navigate('notes');
+    });
+
+    App.mainContainer.show(noteFormView);
+    // [New Note]ボタンはこの画面では必要ないので
+    // ビューを破棄しておく
+    App.headerContainer.empty();
+  },
+});
+```
+### メモの編集機能の追加
+```html
+            <a href="#notes/<%= id %>/edit" class="btn btn-default btn-sm js-edit">
+              <span class="glyphicon glyphicon-edit"></span>
+              Edit
+            </a>
+```
+
+```javascript
+//js/router.js
+
+App.Router = Backbone.Router.extend({
+  routes: {
+    'notes/:id':'showNoteDetail',
+    'new':'showNewNote',
+    'notes/:id/edit':'showEditNote',
+    '*actions':'defaultRoute'
+  },
+
+  // ルーティングが受け取った:idパラメータは
+  // そのまま引数名idで受け取れる
+  showNoteDetail: function(id) {
+    var note = App.noteCollection.get(id);
+    var noteDetailView = new App.NoteDetailView({
+      model: note
+    });
+    
+    App.mainContainer.show(noteDetailView);
+    // メモの詳細画面ではボタンを消したいので
+    // App.Containerのempty()メソッドを呼び出して
+    // ビューを破棄しておく
+    App.headerContainer.empty();
+  },
+  defaultRoute: function() {
+    this.showNoteList();
+    this.navigate('notes');
+  },
+  showNoteList: function() {
+    // コレクションを渡して
+    // メモ一覧の親ビューを初期化する
+    var noteListView = new App.NoteListView({
+      collection: App.noteCollection
+    });
+
+    // 表示領域にメモ一覧を表示する
+    App.mainContainer.show(noteListView);
+    // メモ一覧操作ビューを表示するメソッドの
+    // 呼び出しを追加する
+    this.showNoteControl();
+  },
+
+  // メモ一覧操作ビューを表示するメソッドを追加する
+  showNoteControl: function() {
+    var noteControlView = new App.NoteControlView();
+    App.headerContainer.show(noteControlView);
+  },
+
+  showNewNote: function() {
+    var self = this;
+    // テンプレートの<%= title %>などの出力を空文字列で
+    // 空欄にしておくため、新規に生成したNoteモデルを渡して
+    // NoteFormViewを初期化する
+    var noteFormView = new App.NoteFormView({
+      model: new App.Note()
+    });
+
+    noteFormView.on('submit:form',function(attrs) {
+      // submit:formイベントで受け取ったフォームの
+      // 入力値をNoteCollectionコレクションのcreate()に
+      // 渡してNoteモデルの新規作成と保存を行う
+      App.noteCollection.create(attrs);
+
+      // モデル一覧を表示してルートを#notesに戻す
+      self.showNoteList();
+      self.navigate('notes');
+    });
+
+    App.mainContainer.show(noteFormView);
+    // [New Note]ボタンはこの画面では必要ないので
+    // ビューを破棄しておく
+    App.headerContainer.empty();
+  },
+
+  showEditNote: function(id) {
+    var self = this;
+    // 既存のNoteモデルを取得してNoteFormViewに渡す
+    var note = App.noteCollection.get(id);
+    var noteFormView = new App.NoteFormView({
+      model: note
+    });
+
+    noteFormView.on('submit:form',function(attrs) {
+      // submit:formイベントで受け取ったフォームの入力値をNoteモデルに保存する
+      note.save(attrs);
+
+      // モデル詳細画面を表示してルートも適切なものに書き換える
+      self.showNoteDetail(note.get('id'));
+      self.navigate('notes/' + note.get('id'));
+    });
+
+    App.mainContainer.show(noteFormView);
+  }
+});
+```
+
 ## <a name="4">メモ帳アプリケーションの作成３</a>
 
 # 参照
