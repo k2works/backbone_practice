@@ -867,6 +867,239 @@ App.Router = Backbone.Router.extend({
 ```
 
 ## <a name="4">メモ帳アプリケーションの作成３</a>
+### メモの検索機能の追加
+```html
+      <script type="text/template" id="noteControlView-template">
+        <div class="row">
+          <div class="col-sm-6">
+            <!-- 検索欄のHTMLの追加 -->
+            <form class="form-inline js-search-form">
+              <div class="input-group">
+                <input type="text" class="form-control js-search-query" name="q">
+                  <div class="input-group-btn">
+                    <button class="btn btn-default" type="submit">
+                      <i class="glyphicon glyphicon-search"></i>
+                    </button>
+                  </div>
+                </div>
+              </form>
+              <!-- 検索欄のHTMLの追加 -->
+          </div>
+
+          <div class="col-sm-6 text-right">
+            <a href="#new" class="btn btn-primary btn-small js-new">
+              <span class="glyphicon glyphicon-plus"></span>
+              New Note
+            </a>
+          </div>
+        </div>
+      </script>
+```
+
+```javascript
+//js/note_control.js
+
+App.NoteControlView = Backbone.View.extend({
+
+  // フォームのsubmitイベントの監視を追加する
+  events: {
+    'submit .js-search-form':'onSubmit'
+  },
+
+  render: function() {
+    var html = $('#noteControlView-template').html();
+    this.$el.html(html);
+    return this;    
+  },
+
+  // submitイベントのハンドラを追加する
+  onSubmit: function(e) {
+    e.preventDefault();
+    var query = this.$('.js-search-query').val();
+    this.trigger('submit:form',query);    
+  }
+});
+```
+
+```javascript
+//js/router.js
+
+App.Router = Backbone.Router.extend({
+  routes: {
+    'notes/:id':'showNoteDetail',
+    'new':'showNewNote',
+    'notes/:id/edit':'showEditNote',
+    'notes/search/:query':'searchNote',
+    '*actions':'defaultRoute'
+  },
+
+  // ルーティングが受け取った:idパラメータは
+  // そのまま引数名idで受け取れる
+  showNoteDetail: function(id) {
+    var note = App.noteCollection.get(id);
+    var noteDetailView = new App.NoteDetailView({
+      model: note
+    });
+    
+    App.mainContainer.show(noteDetailView);
+    // メモの詳細画面ではボタンを消したいので
+    // App.Containerのempty()メソッドを呼び出して
+    // ビューを破棄しておく
+    App.headerContainer.empty();
+  },
+  defaultRoute: function() {
+    this.showNoteList();
+    this.navigate('notes');
+  },
+  showNoteList: function(models) {
+
+    // 一覧表示用のコレクションを別途初期化する
+    if(!this.filteredCollection) {
+      this.filteredCollection = new App.NoteCollection();
+    }
+
+    // NoteListViewのインスタンスが表示中でないときのみ
+    // これを初期化して表示する
+    if(!App.mainContainer.has(App.NoteListView)) {
+      // 初期化の際に一覧表示用のコレクションを渡しておく
+      var noteListView = new App.NoteListView({
+        collection: this.filteredCollection
+      });
+      App.mainContainer.show(noteListView);
+    }
+
+    // 検索されたモデルの配列が引数に渡されていればそちらを、
+    // そうでなければすべてのモデルを持つApp.noteCollection
+    // インスタンスのモデルの配列を使用する
+    models = models || App.noteCollection.models;
+
+    // 一覧表示用のコレクションのreset()メソッドに
+    // 採用した方のモデルの配列を渡す
+    this.filteredCollection.reset(models);
+    this.showNoteControl();
+  },
+
+  // メモ一覧操作ビューを表示するメソッドを追加する
+  showNoteControl: function() {
+    var noteControlView = new App.NoteControlView();
+
+    // submit:formイベントの監視を追加する
+    noteControlView.on('submit:form', function(query) {
+      this.searchNote(query);
+      this.navigate('notes/search/' + query);
+    },this);
+    
+    App.headerContainer.show(noteControlView);
+  },
+
+  showNewNote: function() {
+    var self = this;
+    // テンプレートの<%= title %>などの出力を空文字列で
+    // 空欄にしておくため、新規に生成したNoteモデルを渡して
+    // NoteFormViewを初期化する
+    var noteFormView = new App.NoteFormView({
+      model: new App.Note()
+    });
+
+    noteFormView.on('submit:form',function(attrs) {
+      // submit:formイベントで受け取ったフォームの
+      // 入力値をNoteCollectionコレクションのcreate()に
+      // 渡してNoteモデルの新規作成と保存を行う
+      App.noteCollection.create(attrs);
+
+      // モデル一覧を表示してルートを#notesに戻す
+      self.showNoteList();
+      self.navigate('notes');
+    });
+
+    App.mainContainer.show(noteFormView);
+    // [New Note]ボタンはこの画面では必要ないので
+    // ビューを破棄しておく
+    App.headerContainer.empty();
+  },
+
+  showEditNote: function(id) {
+    var self = this;
+    // 既存のNoteモデルを取得してNoteFormViewに渡す
+    var note = App.noteCollection.get(id);
+    var noteFormView = new App.NoteFormView({
+      model: note
+    });
+
+    noteFormView.on('submit:form',function(attrs) {
+      // submit:formイベントで受け取ったフォームの入力値をNoteモデルに保存する
+      note.save(attrs);
+
+      // モデル詳細画面を表示してルートも適切なものに書き換える
+      self.showNoteDetail(note.get('id'));
+      self.navigate('notes/' + note.get('id'));
+    });
+
+    App.mainContainer.show(noteFormView);
+  },
+
+  searchNote: function(query) {
+    var filtered = App.noteCollection.filter(function(note) {
+      return note.get('title').indexOf(query) !== -1;
+    });
+    this.showNoteList(filtered);
+  }
+});
+```
+
+```javascript
+// js/note_list.js
+
+App.NoteListView = Backbone.View.extend({
+
+  tagName:'table',
+
+  // Bootstrapの装飾を与えるために'table'クラス属性値を指定する
+  className: 'table',
+
+  initialize: function(options) {
+    // Backbone.Collectionインスタンスを受け取る
+    this.collection = options.collection;
+    // コレクションのresetイベントに応じてrender()を呼び出す
+    this.listenTo(this.collection, 'reset',this.render);
+  },
+
+  render: function() {
+    // this.$el.html()が呼び出される前に古いビューを破棄しておく
+    this.removeItemViews();
+    // テンプレートから自身のDOM構築を行う
+    var template = $('#noteListView-template').html();
+    this.$el.html(template);
+
+    // 保持しているコレクションから子ビューを生成してレンダリングする
+    this.renderItemViews();
+    return this;
+  },
+
+  renderItemViews: function() {
+    // 子ビューをappend()で挿入する地点を特定する
+    var $insertionPoint = this.$('.js-noteListItemView-container');
+
+    // 後で適切に破棄できるように子ビューの参照を保持しておく
+    this.itemViews = this.collection.map(function(note) {
+      var itemView = new App.NoteListItemView({
+        model: note
+      });
+      $insertionPoint.append(itemView.render().$el);
+      return itemView;
+    },this);
+  },
+
+  // すべての子ビューを破棄するメソッドを追加する
+  removeItemViews: function() {
+    // 保持しているすべてのビューのremove()を呼び出す
+    _.invoke(this.itemView, 'remove');
+  }
+
+});
+```
+
+
 
 # 参照
 + [JavaScriptエンジニア養成読本](http://gihyo.jp/book/2014/978-4-7741-6797-8)

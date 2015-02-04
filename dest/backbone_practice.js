@@ -88,6 +88,10 @@ App.Container = Backbone.View.extend({
   empty: function() {
     this.destroyView(this.currentView);
     this.currentView = null;
+  },
+
+  has: function(obj) {
+    return this.currentView instanceof obj;
   }
 });
 
@@ -109,11 +113,22 @@ App.NoteCollection = Backbone.Collection.extend({
 
 App.NoteControlView = Backbone.View.extend({
 
+  // フォームのsubmitイベントの監視を追加する
+  events: {
+    'submit .js-search-form':'onSubmit'
+  },
+
   render: function() {
-    var html=
-        $('#noteControlView-template').html();
+    var html = $('#noteControlView-template').html();
     this.$el.html(html);
     return this;    
+  },
+
+  // submitイベントのハンドラを追加する
+  onSubmit: function(e) {
+    e.preventDefault();
+    var query = this.$('.js-search-query').val();
+    this.trigger('submit:form',query);    
   }
 });
 
@@ -167,9 +182,13 @@ App.NoteListView = Backbone.View.extend({
   initialize: function(options) {
     // Backbone.Collectionインスタンスを受け取る
     this.collection = options.collection;
+    // コレクションのresetイベントに応じてrender()を呼び出す
+    this.listenTo(this.collection, 'reset',this.render);
   },
 
   render: function() {
+    // this.$el.html()が呼び出される前に古いビューを破棄しておく
+    this.removeItemViews();
     // テンプレートから自身のDOM構築を行う
     var template = $('#noteListView-template').html();
     this.$el.html(template);
@@ -183,15 +202,22 @@ App.NoteListView = Backbone.View.extend({
     // 子ビューをappend()で挿入する地点を特定する
     var $insertionPoint = this.$('.js-noteListItemView-container');
 
-    // コレクション内のすべてのモデルを取り出して
-    // 個々のビューを生成し、親ビューのDOMツリーに挿入する
-    this.collection.each(function(note) {
+    // 後で適切に破棄できるように子ビューの参照を保持しておく
+    this.itemViews = this.collection.map(function(note) {
       var itemView = new App.NoteListItemView({
-        model:note
+        model: note
       });
       $insertionPoint.append(itemView.render().$el);
+      return itemView;
     },this);
+  },
+
+  // すべての子ビューを破棄するメソッドを追加する
+  removeItemViews: function() {
+    // 保持しているすべてのビューのremove()を呼び出す
+    _.invoke(this.itemView, 'remove');
   }
+
 });
 
 // js/note_list_item.js
@@ -233,6 +259,7 @@ App.Router = Backbone.Router.extend({
     'notes/:id':'showNoteDetail',
     'new':'showNewNote',
     'notes/:id/edit':'showEditNote',
+    'notes/search/:query':'searchNote',
     '*actions':'defaultRoute'
   },
 
@@ -254,23 +281,44 @@ App.Router = Backbone.Router.extend({
     this.showNoteList();
     this.navigate('notes');
   },
-  showNoteList: function() {
-    // コレクションを渡して
-    // メモ一覧の親ビューを初期化する
-    var noteListView = new App.NoteListView({
-      collection: App.noteCollection
-    });
+  showNoteList: function(models) {
 
-    // 表示領域にメモ一覧を表示する
-    App.mainContainer.show(noteListView);
-    // メモ一覧操作ビューを表示するメソッドの
-    // 呼び出しを追加する
+    // 一覧表示用のコレクションを別途初期化する
+    if(!this.filteredCollection) {
+      this.filteredCollection = new App.NoteCollection();
+    }
+
+    // NoteListViewのインスタンスが表示中でないときのみ
+    // これを初期化して表示する
+    if(!App.mainContainer.has(App.NoteListView)) {
+      // 初期化の際に一覧表示用のコレクションを渡しておく
+      var noteListView = new App.NoteListView({
+        collection: this.filteredCollection
+      });
+      App.mainContainer.show(noteListView);
+    }
+
+    // 検索されたモデルの配列が引数に渡されていればそちらを、
+    // そうでなければすべてのモデルを持つApp.noteCollection
+    // インスタンスのモデルの配列を使用する
+    models = models || App.noteCollection.models;
+
+    // 一覧表示用のコレクションのreset()メソッドに
+    // 採用した方のモデルの配列を渡す
+    this.filteredCollection.reset(models);
     this.showNoteControl();
   },
 
   // メモ一覧操作ビューを表示するメソッドを追加する
   showNoteControl: function() {
     var noteControlView = new App.NoteControlView();
+
+    // submit:formイベントの監視を追加する
+    noteControlView.on('submit:form', function(query) {
+      this.searchNote(query);
+      this.navigate('notes/search/' + query);
+    },this);
+    
     App.headerContainer.show(noteControlView);
   },
 
@@ -318,5 +366,12 @@ App.Router = Backbone.Router.extend({
     });
 
     App.mainContainer.show(noteFormView);
+  },
+
+  searchNote: function(query) {
+    var filtered = App.noteCollection.filter(function(note) {
+      return note.get('title').indexOf(query) !== -1;
+    });
+    this.showNoteList(filtered);
   }
 });
